@@ -1,0 +1,61 @@
+name: Ubuntu RDP (Ngrok)
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  rdp-access:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 1. Install Desktop Environment (XFCE) & XRDP
+      run: |
+        sudo apt-get update
+        # Install XFCE (Lightweight UI) and XRDP (RDP Server)
+        sudo apt-get install -y xfce4 xfce4-goodies xrdp
+        
+        # Configure XRDP to use XFCE
+        echo xfce4-session > ~/.xsession
+        
+        # Restart XRDP to apply changes
+        sudo service xrdp restart
+
+    - name: 2. Set User Password
+      run: |
+        # Set password for the default user 'runner'
+        echo "runner:P@ssw0rd!" | sudo chpasswd
+
+    - name: 3. Install & Start Ngrok
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+      run: |
+        # Download Ngrok for Linux
+        wget -q https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz
+        tar -xvzf ngrok-v3-stable-linux-amd64.tgz
+        
+        # Authenticate
+        ./ngrok config add-authtoken $env:NGROK_AUTH_TOKEN
+        
+        # Start ngrok in background (TCP 3389)
+        nohup ./ngrok tcp 3389 &
+        
+        # Wait for tunnel to initialize
+        sleep 10
+
+    - name: 4. Get Connection Info
+      run: |
+        # Get the public URL from Ngrok API
+        curl --silent http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url' > ngrok_url.txt
+        
+        # Clean the URL (remove tcp://)
+        CLEAN_URL=$(cat ngrok_url.txt | sed 's/tcp:\/\///')
+        
+        echo "::notice title=RDP Address::$CLEAN_URL"
+        echo "::notice title=Username::runner"
+        echo "::notice title=Password::P@ssw0rd!"
+
+    - name: 5. Keep Session Alive
+      run: |
+        echo "Session is active. Press Cancel Workflow to stop."
+        # Loop forever to prevent the job from finishing
+        while true; do sleep 60; done
